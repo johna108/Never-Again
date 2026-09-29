@@ -1,0 +1,14 @@
+export type StagingScenario = 'ci_failure' | 'health_check_regression' | 'deployment_regression' | 'latency_regression' | 'dependency_regression'
+export type StagingState = { environment: 'STAGING'; scenario: StagingScenario; version: string; health: 'PASS' | 'FAIL'; ci: 'PASS' | 'FAIL'; latencyMs: number; errorRate: number; healthCheck: 'PASS' | 'FAIL'; deploymentSha: string; activeIncident: string; lastAction?: string }
+
+const scenarios: Record<StagingScenario, Omit<StagingState, 'environment' | 'scenario'>> = {
+  ci_failure: { version: '2026.09.29-ci', health: 'PASS', ci: 'FAIL', latencyMs: 118, errorRate: 0.2, healthCheck: 'PASS', deploymentSha: '27ac9b8', activeIncident: 'Build workflow failed on the latest commit.' },
+  health_check_regression: { version: '2026.09.29-health', health: 'FAIL', ci: 'PASS', latencyMs: 140, errorRate: 1.8, healthCheck: 'FAIL', deploymentSha: '31be4d2', activeIncident: 'Health endpoint contract changed after deployment.' },
+  deployment_regression: { version: '2026.09.29-deploy', health: 'FAIL', ci: 'PASS', latencyMs: 840, errorRate: 7.4, healthCheck: 'FAIL', deploymentSha: '44fd901', activeIncident: 'Latency and errors increased after deployment.' },
+  latency_regression: { version: '2026.09.29-latency', health: 'PASS', ci: 'PASS', latencyMs: 680, errorRate: 0.9, healthCheck: 'PASS', deploymentSha: '52aa10e', activeIncident: 'Requests are slow despite healthy checks.' },
+  dependency_regression: { version: '2026.09.29-dependency', health: 'FAIL', ci: 'PASS', latencyMs: 420, errorRate: 5.1, healthCheck: 'FAIL', deploymentSha: '68c0a12', activeIncident: 'Dependency upgrade causes downstream failures.' },
+}
+
+export function createStagingState(scenario: StagingScenario = 'deployment_regression'): StagingState { return { environment: 'STAGING', scenario, ...scenarios[scenario] } }
+export function verifyStaging(state: StagingState) { return { health: state.health === 'PASS', ci: state.ci === 'PASS', latency: state.latencyMs < 300, errorRate: state.errorRate < 2, deployment: Boolean(state.deploymentSha), success: state.health === 'PASS' && state.latencyMs < 300 && state.errorRate < 2 } }
+export function executeStagingSimulation(state: StagingState, action: string, targetSha?: string): StagingState { const next = { ...state, lastAction: action }; if (action === 'rollback_staging' || action === 'redeploy_staging') return { ...next, version: targetSha ? `staging-${targetSha.slice(0, 7)}` : '2026.09.29-stable', health: 'PASS', ci: 'PASS', latencyMs: 118, errorRate: 0.2, healthCheck: 'PASS', deploymentSha: targetSha || 'stable-118', activeIncident: 'Resolved in deterministic staging.' }; if (action === 'restart_staging_service') return { ...next, health: state.scenario === 'dependency_regression' ? 'FAIL' : 'PASS', healthCheck: state.scenario === 'dependency_regression' ? 'FAIL' : 'PASS', errorRate: state.scenario === 'dependency_regression' ? 5.1 : 0.2 }; return next }
